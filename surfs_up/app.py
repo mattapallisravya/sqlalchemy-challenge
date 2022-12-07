@@ -1,3 +1,4 @@
+# Import dependencies 
 import numpy as np
 import datetime as dt
 
@@ -45,6 +46,7 @@ def welcome():
 
 @app.route("/api/v1.0/precipitation")
 def precipitation():
+    
     # Create our session (link) from Python to the DB
     session = Session(engine)
     
@@ -61,8 +63,6 @@ def precipitation():
             filter(Measurement.date <= latest_date[0]).all()
     
     # Converting list of tuples to dictionary
-    #my_dict = dict(one_year_data)
-
     prec_list=[]
     for date, prcp in one_year_data:
         prcp_dict = {}
@@ -78,6 +78,7 @@ def precipitation():
 # Return a JSON list of stations from the dataset.
 @app.route("/api/v1.0/stations")
 def stations():
+    
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
@@ -93,7 +94,7 @@ def stations():
     # Return Jsonify version
     return jsonify(all_stations)
 
-# Return a JSON list of temperature observations for the previous year.
+# Return a JSON list of temperature observations for the previous year for most active station.
 @app.route("/api/v1.0/tobs")
 def temp():
     # Create our session (link) from Python to the DB
@@ -109,22 +110,24 @@ def temp():
     most_active_station
 
     # Using the most active station id
-    # Query the last 12 months of temperature observation data for this station and plot the results as a histogram
+    # Query the last 12 months of temperature observation data for this station 
     latest_date = session.query(Measurement.date).filter(Measurement.station ==most_active_station ).order_by(Measurement.date.desc()).first()
     latest_date
+    
     one_year_back_date = dt.date(2017,8,18)- dt.timedelta(days=365)
     one_year_back_date
-    temp = session.query(Measurement.date,Measurement.tobs).filter(Measurement.date>=one_year_back_date).\
+    
+    temp = session.query(Measurement.date,Measurement.tobs).filter(Measurement.station ==most_active_station ).filter(Measurement.date>=one_year_back_date).\
         filter(Measurement.date<=latest_date[0]).all()
 
-     # Closing the session
+    # Closing the session
     session.close()
 
     # Convert list of tuples into normal list
-    all_stations_temp = list(np.ravel(temp))
+    station_temp_previous_year = list(np.ravel(temp))
 
     # Return Jsonify version
-    return jsonify(all_stations_temp)
+    return jsonify(station_temp_previous_year)
 
 #Return a JSON list of the minimum temperature, the average temperature, 
 # and the maximum temperature for a specified start.
@@ -133,27 +136,32 @@ def start_date_temp_calc(start):
        
         # Create our session (link) from Python to the DB
         session = Session(engine)
+        
+        try:
+            # Query to find if the given date is matching date in dataset else it will throw IndexError.
+            dts = session.query(Measurement.date).filter(Measurement.date==start).limit(1).all()
+            dts[0][0]
 
-        #start = dt.datetime.strptime(start, "%m-%d-%Y")
-        
-        # query the database to min, max, avg temp
-        temp_stats = session.query(func.min(Measurement.tobs),func.max(Measurement.tobs)\
-                    ,func.avg(Measurement.tobs)).filter(Measurement.date>=start).all()
+            # If date matches dataset it will calculate and return min,max,avg temperature from given date to end of dataset.
+            if start==dts[0][0]:
 
-        # Closing the session
-        session.close()
-        
+                # query the database to min, max, avg temp
+                temp_stats = session.query(func.min(Measurement.tobs),func.max(Measurement.tobs)\
+                            ,func.avg(Measurement.tobs)).filter(Measurement.date>=start).all()
+                
+                # Convert list of tuples into normal list
+                temp_statss = list(np.ravel(temp_stats))
 
-        # Convert list of tuples into normal list
-        temp_statss = list(np.ravel(temp_stats))
+                # Return Jsonify version
+                return jsonify(f"Min Temperature:{temp_statss[0]}, Max Temperature:{temp_statss[1]}, Average Temperature:{temp_statss[2]} ")
         
-        #if start == Measurement.date:
-            # Return Jsonify version
-        return jsonify(f"Min Temperature:{temp_statss[0]}, Max Temperature:{temp_statss[1]}, Average Temperature:{temp_statss[2]} ")
-        # else:
-        # return jsonify({"error":f"{start} is not matching records"}),404
+            # Closing the session
+            session.close()
         
-    
+        # Catches IndexError and returns the date is not matching records
+        except IndexError:
+            return jsonify({"error":f"{start} is not matching records. Please re-enter"}),404
+            
 #Return a JSON list of the minimum temperature, the average temperature, 
 # and the maximum temperature for a specified start-end range.
 @app.route("/api/v1.0/<start>/<end>")
@@ -162,25 +170,33 @@ def start_end_date_temp_calc(start,end):
         # Create our session (link) from Python to the DB
         session = Session(engine)
 
-        #start = dt.datetime.strptime(start, "%m-%d-%Y")
-        
-        # query the database to min, max, avg temp
-        temp_stat = session.query(func.min(Measurement.tobs),func.max(Measurement.tobs)\
-                    ,func.avg(Measurement.tobs)).filter(Measurement.date>=start).filter(Measurement.date<=end).all()
+        try:   
+            # Query to find if the given dates are matching dates in dataset else it will throw IndexError.
+            dts = session.query(Measurement.date).filter(Measurement.date==start).limit(1).all()
+            dts[0][0]
 
-        # Closing the session
-        session.close()
-        
+            dts1 = session.query(Measurement.date).filter(Measurement.date==end).limit(1).all()
+            dts1[0][0]
 
-        # Convert list of tuples into normal list
-        temp_st = list(np.ravel(temp_stat))
-        
-        #if start == Measurement.date:
-            # Return Jsonify version
-        return jsonify(f"Min Temperature:{temp_st[0]}, Max Temperature:{temp_st[1]}, Average Temperature:{temp_st[2]} ")
-        # else:
-        # return jsonify({"error":f"{start} is not matching records"}),404
-        
+            # If dates matches dataset it will return min,max,avg temperature between the given dates. 
+            if start==dts[0][0] and end==dts1[0][0]:
 
+                # query the database to min, max, avg temp
+                temp_stat = session.query(func.min(Measurement.tobs),func.max(Measurement.tobs)\
+                            ,func.avg(Measurement.tobs)).filter(Measurement.date>=start).filter(Measurement.date<=end).all()
+                
+                # Convert list of tuples into normal list
+                temp_st = list(np.ravel(temp_stat))
+                
+                return jsonify(f"Min Temperature:{temp_st[0]}, Max Temperature:{temp_st[1]}, Average Temperature:{temp_st[2]} ")
+            
+            # Closing the session
+            session.close()
+
+        # Catches IndexError and returns the date is not matching records
+        except IndexError:
+            return jsonify({"error":f"{start}/{end} is not matching records. Please re-enter"}),404
+        
 if __name__ == '__main__':
     app.run(debug=True)
+ 
